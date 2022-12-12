@@ -1,4 +1,4 @@
-# Shift-var-deblur
+# Shift-Var-Deblur
 
 Shift Variant Image Deconvolution using Deep Learning
 

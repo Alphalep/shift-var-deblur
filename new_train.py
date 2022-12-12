@@ -19,11 +19,7 @@ from models.network import cGAN, Discriminator
 import scripts.coordConfig as cfg
 def main():
     script_time = time.time()
-    """CoordConv Setup"""
-    switch_disc =  True
-    switch_CGAN_encoder  = True
-    switch_cGAN_decoder =  True
-
+    
     """Declare the Device Cluster for training"""
     #Needs modification for DDP Parallel
     #How to change device id?
@@ -36,8 +32,7 @@ def main():
 
     transform = transforms.Compose([transforms.Resize((512,512)),
                                         transforms.ToTensor()])
-    blur_train = "data/DIV2K/blur_train"
-    blur_val  = "data/DIV2K/blur_val"
+    
     batch_size = cfg.batch_size
     models_dir = cfg.models_dir
     if not os.path.exists(models_dir):
@@ -45,8 +40,8 @@ def main():
     
 
 
-    train_dataset = Custom_Dataset(root_dir="data/DIV2K/train",blur_dir = blur_train,transform=transform)
-    val_dataset = Custom_Dataset(root_dir="data/DIV2K/val",blur_dir = blur_val,transform=transform)
+    train_dataset = Custom_Dataset(root_dir=cfg.root_train,blur_dir = cfg.blur_train,transform=transform)
+    val_dataset = Custom_Dataset(root_dir=cfg.root_val,blur_dir = cfg.blur_val,transform=transform)
     #Loaders
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size, shuffle = not True)
@@ -57,8 +52,8 @@ def main():
 
     """Model Definition"""
 
-    gen = cGAN(in_channels=1,out_channels=1,depth=64,padding = 1, encodeCoordConv=switch_CGAN_encoder,decodeCoordConv=switch_cGAN_decoder).to(device)
-    disc = Discriminator(in_channels = 1 , d = 64, coordConv  = switch_disc).to(device)
+    gen = cGAN(in_channels=1,out_channels=1,depth=64,padding = 1, encodeCoordConv=cfg.switch_CGAN_encoder,decodeCoordConv=cfg.switch_cGAN_decoder).to(device)
+    disc = Discriminator(in_channels = 1 , d = 64, coordConv  = cfg.switch_disc).to(device)
     gen.weight_init(mean=0.0, std=0.02)
     disc.weight_init(mean=0.0, std=0.02)
     
@@ -148,7 +143,10 @@ def main():
             G_optimizer.zero_grad()
             out = gen(noisy_imgs)
             d_result = disc(noisy_imgs, out).squeeze()
-            g_train_loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs)  #+ cfg.L2_lambda * L1_loss(svblur(out),noisy_imgs)
+            if cfg.include_reblurLoss:
+                g_train_loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs)+cfg.L2_lambda * L1_loss(svblur(out),noisy_imgs)
+            else:
+                g_train_loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs)
             running_train_loss.append(g_train_loss.item())
             g_train_loss.backward()
             G_optimizer.step()
@@ -175,7 +173,10 @@ def main():
                 noisy_imgs = noisy_imgs.to(device) 
                 out = gen(noisy_imgs)
                 d_result = disc(noisy_imgs, out).squeeze()
-                loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs)  #+ cfg.L2_lambda * L1_loss(svblur(out),noisy_imgs)
+                if cfg.include_reblurLoss:
+                    loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs) + cfg.L2_lambda * L1_loss(svblur(out),noisy_imgs)
+                else:
+                    loss = BCE_loss(d_result, torch.ones_like(d_result).to(device)) + cfg.L1_lambda * L1_loss(out,imgs)
                 running_val_loss.append(loss.item())
 
                 if (batch_idx + 1)%log_interval == 0:
@@ -189,7 +190,7 @@ def main():
         if (epoch+1)%log_interval == 0:
            
             #Plot Loss-Epoch and Loss-Batch curve
-            plot_losses(running_train_loss, running_disc_loss, running_val_loss, val_epoch_loss,  epoch)   
+            plot_losses(running_train_loss, running_disc_loss,train_epoch_loss, val_epoch_loss,  epoch)   
              #Store Model Dict
             torch.save({'gen_state_dict': gen.state_dict(),
                         'disc_state_dict': disc.state_dict(),

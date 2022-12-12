@@ -5,6 +5,8 @@ from torchvision import transforms
 import torch.nn as nn
 from models.coordunet import CoordConvUNet
 from models.network import cGAN
+from torchmetrics.functional import peak_signal_noise_ratio
+from torchmetrics import MultiScaleStructuralSimilarityIndexMeasure
 #from unet import UNet
 #from datasets import custom_test_dataset
 import scripts.coordConfig as cfg
@@ -20,6 +22,7 @@ if not os.path.exists(res_dir):
     os.mkdir(res_dir)
     
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+torch.cuda.set_device(1)
 print('device: ', device)
 
 transform = transforms.Compose([
@@ -51,7 +54,7 @@ print(f'\nckpt loaded: {ckpt_path}')
 model_state_dict = ckpt['gen_state_dict']
 model.load_state_dict(model_state_dict)
 model.to(device)
-
+ssim = MultiScaleStructuralSimilarityIndexMeasure()
 def get_img_strip(tensr):
     # shape: [bs,1,h,w]
     bs, _ , h, w = tensr.shape
@@ -75,9 +78,13 @@ with torch.no_grad():
         print('batch: {}/{}'.format(str(batch_idx + 1).zfill(len(str(len(test_loader)))), len(test_loader)), end='\r')
         noisy_imgs = noisy_imgs.to(device)
         out = model(noisy_imgs)
+        psnr = peak_signal_noise_ratio(out.detach().cpu(),imgs)
+        ms_ssim = ssim(out.detach().cpu(),imgs)
         out_np = get_img_strip(out)
         denoised = denoise(noisy_imgs,imgs)
         cv2.imwrite(os.path.join(res_dir, f'denoised{str(batch_idx).zfill(3)}.jpg'),out_np)
+        print("Mean PSNR:",psnr)
+        print("Mean SSIM:",ms_ssim)
         
 print('\n\nresults saved in \'{}\' directory'.format(res_dir))
 

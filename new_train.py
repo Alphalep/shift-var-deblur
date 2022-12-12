@@ -7,6 +7,7 @@ from scripts.forward import *
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from scripts.trackers import *
+torch.cuda.set_device(1) # activate based on requirenment
 plt.switch_backend('agg') # for servers not supporting display
 
 # import neccesary libraries for defining the optimizers
